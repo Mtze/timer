@@ -15,7 +15,6 @@ const themeToggle = $('theme-toggle');
 const themeIcon = $('theme-icon');
 
 const THEME_KEY = 'static-timer-theme';
-const FPS = 30;
 
 const SUN_ICON = '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>';
 const MOON_ICON = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
@@ -262,11 +261,17 @@ async function renderAndDownload() {
     const height = canvas.height;
     const colors = readThemeColors();
     const L = computeLayout(ctx, width, height);
-    const totalFrames = Math.ceil((durationMs / 1000) * FPS) + 1;
-    const frameIntervalUs = 1_000_000 / FPS;
+    const durationSec = durationMs / 1000;
+    // Adaptive framerate: ring movement >= ~2 degrees/frame is imperceptible,
+    // and digits only change once per second. So 2 fps is plenty for long timers
+    // and we ramp up to 30 fps only for very short ones.
+    const targetFps = Math.max(2, Math.min(30, Math.ceil(180 / durationSec)));
+    const totalFrames = Math.ceil(durationSec * targetFps) + 1;
+    const frameIntervalUs = 1_000_000 / targetFps;
+    const frameDurationUs = Math.round(frameIntervalUs);
     const renderStart = performance.now();
-    const yieldEvery = FPS * 4;
-    const keyframeEvery = FPS * 2;
+    const yieldEvery = Math.max(30, targetFps * 4);
+    const keyframeEvery = Math.max(1, Math.round(targetFps * 2));
 
     try {
         const muxer = new Muxer({
@@ -296,7 +301,7 @@ async function renderAndDownload() {
             codec,
             width,
             height,
-            framerate: FPS,
+            framerate: targetFps,
             bitrate,
             bitrateMode: 'variable',
             latencyMode: 'realtime',
@@ -311,16 +316,19 @@ async function renderAndDownload() {
                 if (encoderError) throw encoderError;
             }
 
-            const elapsedMs = Math.min((i / FPS) * 1000, durationMs);
+            const elapsedMs = Math.min((i / targetFps) * 1000, durationMs);
             drawFrame(ctx, elapsedMs, durationMs, width, height, colors, L);
-            const frame = new VideoFrame(canvas, { timestamp: i * frameIntervalUs });
+            const frame = new VideoFrame(canvas, {
+                timestamp: i * frameIntervalUs,
+                duration: frameDurationUs,
+            });
             encoder.encode(frame, { keyFrame: i % keyframeEvery === 0 });
             frame.close();
 
             if (i % yieldEvery === 0 || i === totalFrames - 1) {
                 const pct = Math.floor(((i + 1) / totalFrames) * 100);
                 const elapsedRender = (performance.now() - renderStart) / 1000;
-                showStatus(`Encoding ${pct}% (${i + 1} / ${totalFrames} frames, ${elapsedRender.toFixed(1)}s)...`);
+                showStatus(`Encoding ${pct}% (${i + 1} / ${totalFrames} frames @ ${targetFps} fps, ${elapsedRender.toFixed(1)}s)...`);
                 await new Promise((r) => setTimeout(r, 0));
             }
         }
