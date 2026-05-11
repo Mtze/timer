@@ -281,13 +281,23 @@ async function renderAndDownload() {
             error: (e) => { encoderError = e; },
         });
 
-        const codec = width >= 1920 ? 'avc1.42E028' : 'avc1.42E01F';
+        let codec, bitrate;
+        if (width >= 3840) {
+            codec = 'avc1.640033';
+            bitrate = 15_000_000;
+        } else if (width >= 1920) {
+            codec = 'avc1.42E028';
+            bitrate = 5_000_000;
+        } else {
+            codec = 'avc1.42E01F';
+            bitrate = 3_000_000;
+        }
         encoder.configure({
             codec,
             width,
             height,
             framerate: FPS,
-            bitrate: width >= 1920 ? 5_000_000 : 3_000_000,
+            bitrate,
             bitrateMode: 'variable',
             latencyMode: 'realtime',
             hardwareAcceleration: 'prefer-hardware',
