@@ -249,5 +249,50 @@ button:disabled {
     margin: 0;
     border: none;
     border-radius: 16px;
+}
+
+.running-controls {
+    position: fixed;
+    bottom: 6vh;
+    left: 50%;
+    transform: translate(-50%, 8px);
+    display: flex;
+    gap: 14px;
+    z-index: 10;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.35s ease, transform 0.35s ease;
+}
+
+.app.running.show-overlay ~ .running-controls {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translate(-50%, 0);
+}
+
+.overlay-btn {
+    background: color-mix(in oklab, var(--surface) 86%, transparent);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    width: 56px;
+    height: 56px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     cursor: pointer;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+    transition: background 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
+    font-family: inherit;
+}
+
+.overlay-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.overlay-btn:active {
+    transform: translateY(1px);
 }

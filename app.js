@@ -13,17 +13,29 @@ const downloadBtn = $('download');
 const statusEl = $('status');
 const themeToggle = $('theme-toggle');
 const themeIcon = $('theme-icon');
+const pauseBtn = $('pause');
+const pauseIcon = $('pause-icon');
+const resetBtn = $('reset');
 
 const THEME_KEY = 'static-timer-theme';
 
 const SUN_ICON = '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>';
 const MOON_ICON = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
+const PAUSE_ICON = '<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>';
+const PLAY_ICON = '<path d="M7 4l13 8-13 8z"/>';
+
+const OVERLAY_HIDE_MS = 2500;
+const OVERLAY_MOVE_THROTTLE_MS = 100;
 
 let durationMs = 0;
 let startTime = null;
 let rafId = null;
 let isRendering = false;
 let layout = null;
+let isPaused = false;
+let pausedElapsedMs = 0;
+let overlayHideTimer = null;
+let lastOverlayMove = 0;
 
 initTheme();
 applyResolution();
@@ -45,11 +57,17 @@ downloadBtn.addEventListener('click', renderAndDownload);
         if (!rafId && !isRendering) resetPreview();
     });
 });
-canvas.addEventListener('click', () => {
-    if (rafId) stopLive();
-});
+pauseBtn.addEventListener('click', togglePause);
+resetBtn.addEventListener('click', stopLive);
+document.addEventListener('mousemove', onPointerActivity);
+document.addEventListener('pointerdown', onPointerActivity);
 document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && rafId) stopLive();
+    if (!isLiveActive()) return;
+    if (e.key === 'Escape') stopLive();
+    else if (e.key === ' ' || e.code === 'Space') {
+        e.preventDefault();
+        togglePause();
+    }
 });
 
 function checkVideoSupport() {
@@ -200,6 +218,10 @@ function setControlsDisabled(disabled) {
     resolutionSelect.disabled = disabled;
 }
 
+function isLiveActive() {
+    return appEl.classList.contains('running');
+}
+
 function startLive() {
     durationMs = readDurationMs();
     if (durationMs <= 0) {
@@ -208,7 +230,10 @@ function startLive() {
     }
     showStatus('');
     startTime = performance.now();
+    isPaused = false;
     appEl.classList.add('running');
+    setPauseIcon();
+    showOverlay();
     tick();
 }
 
@@ -223,18 +248,80 @@ function tick() {
     rafId = requestAnimationFrame(tick);
 }
 
+function pauseLive() {
+    if (!rafId || isPaused) return;
+    cancelAnimationFrame(rafId);
+    rafId = null;
+    pausedElapsedMs = performance.now() - startTime;
+    isPaused = true;
+    setPauseIcon();
+    showOverlay();
+}
+
+function resumeLive() {
+    if (!isPaused) return;
+    isPaused = false;
+    startTime = performance.now() - pausedElapsedMs;
+    setPauseIcon();
+    showOverlay();
+    tick();
+}
+
+function togglePause() {
+    if (!isLiveActive()) return;
+    if (isPaused) resumeLive();
+    else pauseLive();
+}
+
+function setPauseIcon() {
+    pauseIcon.innerHTML = isPaused ? PLAY_ICON : PAUSE_ICON;
+}
+
 function finishLive() {
     rafId = null;
+    isPaused = false;
     appEl.classList.remove('running');
+    appEl.classList.remove('show-overlay');
+    clearOverlayHideTimer();
     startBtn.textContent = 'Start';
     setControlsDisabled(false);
     if (typeof window.VideoEncoder !== 'undefined') downloadBtn.disabled = false;
 }
 
 function stopLive() {
+    if (!isLiveActive()) return;
     if (rafId) cancelAnimationFrame(rafId);
     finishLive();
     resetPreview();
+}
+
+function showOverlay() {
+    appEl.classList.add('show-overlay');
+    scheduleOverlayHide();
+}
+
+function scheduleOverlayHide() {
+    clearOverlayHideTimer();
+    if (isPaused) return;
+    overlayHideTimer = setTimeout(() => {
+        overlayHideTimer = null;
+        appEl.classList.remove('show-overlay');
+    }, OVERLAY_HIDE_MS);
+}
+
+function clearOverlayHideTimer() {
+    if (overlayHideTimer) {
+        clearTimeout(overlayHideTimer);
+        overlayHideTimer = null;
+    }
+}
+
+function onPointerActivity() {
+    if (!isLiveActive()) return;
+    const now = performance.now();
+    if (now - lastOverlayMove < OVERLAY_MOVE_THROTTLE_MS) return;
+    lastOverlayMove = now;
+    showOverlay();
 }
 
 function showStatus(text, warning = false) {
