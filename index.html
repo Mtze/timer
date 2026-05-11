@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Static Timer</title>
+    <script>
+        (function () {
+            var t = localStorage.getItem('static-timer-theme');
+            if (!t) t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+            document.documentElement.dataset.theme = t;
+        })();
+    </script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <main class="app">
+        <header>
+            <h1>Static Timer</h1>
+            <button id="theme-toggle" type="button" aria-label="Toggle theme" title="Toggle theme">
+                <svg id="theme-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
+            </button>
+        </header>
+
+        <canvas id="preview" width="1280" height="720" aria-label="Timer preview"></canvas>
+
+        <div class="inputs">
+            <div class="input-field">
+                <label for="hours">Hours</label>
+                <input id="hours" type="number" min="0" max="23" value="0" inputmode="numeric">
+            </div>
+            <div class="input-field">
+                <label for="minutes">Minutes</label>
+                <input id="minutes" type="number" min="0" max="59" value="5" inputmode="numeric">
+            </div>
+            <div class="input-field">
+                <label for="seconds">Seconds</label>
+                <input id="seconds" type="number" min="0" max="59" value="0" inputmode="numeric">
+            </div>
+        </div>
+
+        <div class="resolution">
+            <label for="resolution">Resolution</label>
+            <select id="resolution">
+                <option value="1280x720" selected>720p (1280 x 720)</option>
+                <option value="1920x1080">1080p (1920 x 1080)</option>
+            </select>
+        </div>
+
+        <div class="actions">
+            <button id="start" class="primary" type="button">Start</button>
+            <button id="download" class="secondary" type="button">Download MP4</button>
+        </div>
+
+        <div id="status" class="status" role="status" aria-live="polite"></div>
+    </main>
+
+    <script type="module" src="app.js"></script>
+</body>
+</html>
