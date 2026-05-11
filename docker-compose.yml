@@ -1,0 +1,7 @@
+services:
+  static-timer:
+    build: .
+    container_name: static-timer
+    ports:
+      - "8000:80"
+    restart: unless-stopped

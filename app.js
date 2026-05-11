@@ -1,8 +1,9 @@
 import { Muxer, ArrayBufferTarget } from 'https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/+esm';
 
 const $ = (id) => document.getElementById(id);
+const appEl = document.querySelector('.app');
 const canvas = $('preview');
-const ctx = canvas.getContext('2d');
+const ctx = canvas.getContext('2d', { alpha: false });
 const hoursInput = $('hours');
 const minutesInput = $('minutes');
 const secondsInput = $('seconds');
@@ -23,6 +24,7 @@ let durationMs = 0;
 let startTime = null;
 let rafId = null;
 let isRendering = false;
+let layout = null;
 
 initTheme();
 applyResolution();
@@ -43,6 +45,12 @@ downloadBtn.addEventListener('click', renderAndDownload);
     input.addEventListener('input', () => {
         if (!rafId && !isRendering) resetPreview();
     });
+});
+canvas.addEventListener('click', () => {
+    if (rafId) stopLive();
+});
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && rafId) stopLive();
 });
 
 function checkVideoSupport() {
@@ -77,6 +85,35 @@ function applyResolution() {
     const [w, h] = resolutionSelect.value.split('x').map(Number);
     canvas.width = w;
     canvas.height = h;
+    layout = computeLayout(ctx, w, h);
+}
+
+function computeLayout(targetCtx, width, height) {
+    const cx = width / 2;
+    const cy = height / 2;
+    const radius = Math.min(width, height) * 0.4;
+    const ringWidth = Math.max(10, radius * 0.06);
+
+    const digitFamily = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+    const labelFamily = '-apple-system, "Inter", "Segoe UI", Roboto, sans-serif';
+
+    const maxTextWidth = (radius - ringWidth) * 2 * 0.78;
+    let fontSize = Math.floor(radius * 0.55);
+    targetCtx.save();
+    targetCtx.font = `600 ${fontSize}px ${digitFamily}`;
+    const sampleWidth = targetCtx.measureText('00:00:00').width;
+    if (sampleWidth > maxTextWidth) {
+        fontSize = Math.max(12, Math.floor(fontSize * (maxTextWidth / sampleWidth)));
+    }
+    targetCtx.restore();
+
+    const labelSize = Math.max(12, Math.floor(fontSize * 0.2));
+
+    return {
+        cx, cy, radius, ringWidth, fontSize, labelSize,
+        digitFont: `600 ${fontSize}px ${digitFamily}`,
+        labelFont: `600 ${labelSize}px ${labelFamily}`,
+    };
 }
 
 function readDurationMs() {
@@ -108,26 +145,22 @@ function readThemeColors() {
     };
 }
 
-function drawFrame(targetCtx, elapsedMs, totalMs, width, height, colors) {
+function drawFrame(targetCtx, elapsedMs, totalMs, width, height, colors, L) {
     colors = colors || readThemeColors();
+    L = L || layout || computeLayout(targetCtx, width, height);
 
     targetCtx.fillStyle = colors.bg;
     targetCtx.fillRect(0, 0, width, height);
-
-    const cx = width / 2;
-    const cy = height / 2;
-    const radius = Math.min(width, height) * 0.34;
-    const ringWidth = Math.max(8, radius * 0.07);
 
     const safeTotal = Math.max(totalMs, 1);
     const remaining = Math.max(0, totalMs - elapsedMs);
     const progress = Math.min(1, Math.max(0, elapsedMs / safeTotal));
 
-    targetCtx.lineWidth = ringWidth;
+    targetCtx.lineWidth = L.ringWidth;
     targetCtx.lineCap = 'round';
     targetCtx.strokeStyle = colors.ringTrack;
     targetCtx.beginPath();
-    targetCtx.arc(cx, cy, radius, 0, Math.PI * 2);
+    targetCtx.arc(L.cx, L.cy, L.radius, 0, Math.PI * 2);
     targetCtx.stroke();
 
     if (progress < 1) {
@@ -135,7 +168,7 @@ function drawFrame(targetCtx, elapsedMs, totalMs, width, height, colors) {
         targetCtx.beginPath();
         const start = -Math.PI / 2 + Math.PI * 2 * progress;
         const end = -Math.PI / 2 + Math.PI * 2;
-        targetCtx.arc(cx, cy, radius, start, end);
+        targetCtx.arc(L.cx, L.cy, L.radius, start, end);
         targetCtx.stroke();
     }
 
@@ -146,16 +179,14 @@ function drawFrame(targetCtx, elapsedMs, totalMs, width, height, colors) {
     const text = `${pad(h)}:${pad(m)}:${pad(s)}`;
 
     targetCtx.fillStyle = colors.fg;
-    const fontSize = Math.floor(radius * 0.48);
-    targetCtx.font = `600 ${fontSize}px ui-monospace, "SF Mono", Menlo, Consolas, monospace`;
+    targetCtx.font = L.digitFont;
     targetCtx.textAlign = 'center';
     targetCtx.textBaseline = 'middle';
-    targetCtx.fillText(text, cx, cy - fontSize * 0.05);
+    targetCtx.fillText(text, L.cx, L.cy - L.fontSize * 0.05);
 
     targetCtx.fillStyle = colors.muted;
-    const labelSize = Math.max(12, Math.floor(radius * 0.12));
-    targetCtx.font = `600 ${labelSize}px -apple-system, "Inter", "Segoe UI", sans-serif`;
-    targetCtx.fillText('REMAINING', cx, cy + fontSize * 0.75);
+    targetCtx.font = L.labelFont;
+    targetCtx.fillText('REMAINING', L.cx, L.cy + L.fontSize * 0.7);
 }
 
 function resetPreview() {
@@ -178,9 +209,7 @@ function startLive() {
     }
     showStatus('');
     startTime = performance.now();
-    startBtn.textContent = 'Reset';
-    setControlsDisabled(true);
-    downloadBtn.disabled = true;
+    appEl.classList.add('running');
     tick();
 }
 
@@ -197,6 +226,7 @@ function tick() {
 
 function finishLive() {
     rafId = null;
+    appEl.classList.remove('running');
     startBtn.textContent = 'Start';
     setControlsDisabled(false);
     if (typeof window.VideoEncoder !== 'undefined') downloadBtn.disabled = false;
@@ -231,9 +261,12 @@ async function renderAndDownload() {
     const width = canvas.width;
     const height = canvas.height;
     const colors = readThemeColors();
+    const L = computeLayout(ctx, width, height);
     const totalFrames = Math.ceil((durationMs / 1000) * FPS) + 1;
     const frameIntervalUs = 1_000_000 / FPS;
     const renderStart = performance.now();
+    const yieldEvery = FPS * 4;
+    const keyframeEvery = FPS * 2;
 
     try {
         const muxer = new Muxer({
@@ -254,29 +287,35 @@ async function renderAndDownload() {
             width,
             height,
             framerate: FPS,
-            bitrate: width >= 1920 ? 6_000_000 : 4_000_000,
+            bitrate: width >= 1920 ? 5_000_000 : 3_000_000,
             bitrateMode: 'variable',
+            latencyMode: 'realtime',
+            hardwareAcceleration: 'prefer-hardware',
         });
 
         for (let i = 0; i < totalFrames; i++) {
             if (encoderError) throw encoderError;
 
-            while (encoder.encodeQueueSize > 60) {
-                await new Promise((r) => setTimeout(r, 5));
+            while (encoder.encodeQueueSize > 8) {
+                await new Promise((r) => setTimeout(r, 0));
+                if (encoderError) throw encoderError;
             }
 
             const elapsedMs = Math.min((i / FPS) * 1000, durationMs);
-            drawFrame(ctx, elapsedMs, durationMs, width, height, colors);
+            drawFrame(ctx, elapsedMs, durationMs, width, height, colors, L);
             const frame = new VideoFrame(canvas, { timestamp: i * frameIntervalUs });
-            encoder.encode(frame, { keyFrame: i % 60 === 0 });
+            encoder.encode(frame, { keyFrame: i % keyframeEvery === 0 });
             frame.close();
 
-            if (i % FPS === 0 || i === totalFrames - 1) {
-                showStatus(`Encoding frame ${i + 1} / ${totalFrames}...`);
+            if (i % yieldEvery === 0 || i === totalFrames - 1) {
+                const pct = Math.floor(((i + 1) / totalFrames) * 100);
+                const elapsedRender = (performance.now() - renderStart) / 1000;
+                showStatus(`Encoding ${pct}% (${i + 1} / ${totalFrames} frames, ${elapsedRender.toFixed(1)}s)...`);
                 await new Promise((r) => setTimeout(r, 0));
             }
         }
 
+        showStatus('Finalizing...');
         await encoder.flush();
         if (encoderError) throw encoderError;
         muxer.finalize();
@@ -296,7 +335,8 @@ async function renderAndDownload() {
 
         const seconds = ((performance.now() - renderStart) / 1000).toFixed(1);
         const sizeMb = (blob.size / (1024 * 1024)).toFixed(1);
-        showStatus(`Done. ${fname} (${sizeMb} MB) rendered in ${seconds}s.`);
+        const realtime = (durationMs / 1000) / parseFloat(seconds);
+        showStatus(`Done. ${fname} (${sizeMb} MB) rendered in ${seconds}s (${realtime.toFixed(1)}x realtime).`);
     } catch (err) {
         console.error(err);
         showStatus(`Render failed: ${err.message || err}`, true);

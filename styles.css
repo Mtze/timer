@@ -228,3 +228,26 @@ button:disabled {
 .status.warning {
     color: var(--warning);
 }
+
+.app.running {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    max-width: min(96vw, 1500px);
+}
+
+.app.running header,
+.app.running .inputs,
+.app.running .resolution,
+.app.running .actions,
+.app.running .status {
+    display: none;
+}
+
+.app.running #preview {
+    margin: 0;
+    border: none;
+    border-radius: 16px;
+    cursor: pointer;
+}
